@@ -194,7 +194,6 @@ int ecryptfs_private_is_mounted(char *dev, char *mnt, char *sig, int mounting) {
 	return mounted;
 }
 
-
 /**
  * TODO: We need to support more hash algs
  * @fekek: ECRYPTFS_MAX_KEY_BYTES bytes of allocated memory
@@ -211,16 +210,21 @@ int
 generate_passphrase_sig(char *passphrase_sig, char *fekek,
 			char *salt, char *passphrase)
 {
+	return generate_passphrase_sig_bk(passphrase_sig, fekek, salt, passphrase, strlen(passphrase));
+}
+
+int
+generate_passphrase_sig_bk(char *passphrase_sig, char *fekek,
+			char *salt, char *passphrase, unsigned int passphrase_size)
+{
 	char salt_and_passphrase[ECRYPTFS_MAX_PASSPHRASE_BYTES
 				 + ECRYPTFS_SALT_SIZE];
-	int passphrase_size;
 	int alg = SEC_OID_SHA512;
 	int dig_len = SHA512_DIGEST_LENGTH;
 	char buf[SHA512_DIGEST_LENGTH];
 	int hash_iterations = ECRYPTFS_DEFAULT_NUM_HASH_ITERATIONS;
 	int rc = 0;
 
-	passphrase_size = strlen(passphrase);
 	if (passphrase_size > ECRYPTFS_MAX_PASSPHRASE_BYTES) {
 		passphrase_sig = NULL;
 		syslog(LOG_ERR, "Passphrase too large (%d bytes)\n",

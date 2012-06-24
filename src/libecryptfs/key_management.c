@@ -55,12 +55,12 @@
  */
 int ecryptfs_generate_passphrase_auth_tok(struct ecryptfs_auth_tok **auth_tok,
 					  char *auth_tok_sig, char *fekek,
-					  char *salt, char *passphrase)
+					  char *salt, char *passphrase, unsigned int passphrase_size)
 {
 	int rc;
 
 	*auth_tok = NULL;
-	rc = generate_passphrase_sig(auth_tok_sig, fekek, salt, passphrase);
+	rc = generate_passphrase_sig_bk(auth_tok_sig, fekek, salt, passphrase, passphrase_size);
 	if (rc) {
 		syslog(LOG_ERR, "Error generating passphrase signature; "
 		       "rc = [%d]\n", rc);
@@ -119,7 +119,7 @@ binary_data ecryptfs_passphrase_blob(char *salt, char *passphrase)
 
 	memset(&bd, 0, sizeof(bd));
 	rc = ecryptfs_generate_passphrase_auth_tok(&auth_tok, auth_tok_sig,
-						   fekek, salt, passphrase);
+						   fekek, salt, passphrase, strlen(passphrase));
 	if (rc) {
 		syslog(LOG_ERR, "%s: Error attempting to generate passphrase "
 		       "authentication token blob; rc = [%d]\n", __FUNCTION__,
@@ -215,12 +215,19 @@ int ecryptfs_add_blob_to_keyring(char *blob, char *sig)
 int ecryptfs_add_passphrase_key_to_keyring(char *auth_tok_sig, char *passphrase,
 					   char *salt)
 {
+	return ecryptfs_add_passphrase_key_to_keyring_bk(auth_tok_sig, passphrase,
+			strlen(passphrase), salt);
+}
+
+int ecryptfs_add_passphrase_key_to_keyring_bk(char *auth_tok_sig, char *passphrase,
+					   unsigned int passphrase_size, char *salt)
+{
 	int rc;
 	char fekek[ECRYPTFS_MAX_KEY_BYTES];
 	struct ecryptfs_auth_tok *auth_tok = NULL;
 
 	rc = ecryptfs_generate_passphrase_auth_tok(&auth_tok, auth_tok_sig,
-						   fekek, salt, passphrase);
+						   fekek, salt, passphrase, strlen(passphrase));
 	if (rc) {
 		syslog(LOG_ERR, "%s: Error attempting to generate the "
 		       "passphrase auth tok payload; rc = [%d]\n",
@@ -288,6 +295,14 @@ out:
 int ecryptfs_wrap_passphrase(char *filename, char *wrapping_passphrase,
 			     char *wrapping_salt, char *decrypted_passphrase)
 {
+	return ecryptfs_wrap_passphrase_bk(filename, wrapping_passphrase,
+			     wrapping_salt, decrypted_passphrase, strlen(decrypted_passphrase));
+}
+
+int ecryptfs_wrap_passphrase_bk(char *filename, char *wrapping_passphrase,
+			     char *wrapping_salt, char *decrypted_passphrase,
+			     unsigned int decrypted_passphrase_bytes)
+{
 	char wrapping_auth_tok_sig[ECRYPTFS_SIG_SIZE_HEX + 1];
 	char wrapping_key[ECRYPTFS_MAX_KEY_BYTES];
 	char padded_decrypted_passphrase[ECRYPTFS_MAX_PASSPHRASE_BYTES +
@@ -305,12 +320,10 @@ int ecryptfs_wrap_passphrase(char *filename, char *wrapping_passphrase,
 	PK11Context *enc_ctx = NULL;
 	SECItem *sec_param = NULL;
 	int encrypted_passphrase_bytes;
-	int decrypted_passphrase_bytes;
 	int fd;
 	ssize_t size;
 	int rc;
 
-	decrypted_passphrase_bytes = strlen(decrypted_passphrase);
 	if (decrypted_passphrase_bytes > ECRYPTFS_MAX_PASSPHRASE_BYTES) {
 		syslog(LOG_ERR, "Decrypted passphrase is [%d] bytes long; "
 		       "[%d] is the max\n", decrypted_passphrase_bytes,
@@ -432,6 +445,15 @@ out:
  * ECRYPTFS_MAX_PASSPHRASE_BYTES + 1 bytes
  */
 int ecryptfs_unwrap_passphrase(char *decrypted_passphrase, char *filename,
+			       char *wrapping_passphrase, char *wrapping_salt)
+{
+	unsigned int decrypted_passphrase_size;
+	return ecryptfs_unwrap_passphrase_bk(decrypted_passphrase,
+			&decrypted_passphrase_size, filename, wrapping_passphrase, wrapping_salt);
+}
+
+int ecryptfs_unwrap_passphrase_bk(char *decrypted_passphrase,
+			       unsigned int *decrypted_passphrase_size, char *filename,
 			       char *wrapping_passphrase, char *wrapping_salt)
 {
 	char wrapping_auth_tok_sig[ECRYPTFS_SIG_SIZE_HEX + 1];
@@ -556,6 +578,7 @@ nss_finish:
 		rc = - EIO;
 		goto out;
 	}
+	*decrypted_passphrase_size = tmp1_outlen + tmp2_outlen;
 out:
 	return rc;
 }
