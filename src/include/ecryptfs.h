@@ -539,16 +539,20 @@ int ecryptfs_wrap_passphrase_file(char *dest, char *wrapping_passphrase,
 int ecryptfs_wrap_passphrase(char *filename, char *wrapping_passphrase,
 			     char *wrapping_salt, char *decrypted_passphrase);
 int ecryptfs_wrap_passphrase_bk(char *filename, char *wrapping_passphrase,
-			     char *wrapping_salt, char *decrypted_passphrase,
-			     unsigned int decrypted_passphrase_size);
+			     unsigned int wrapping_passphrase_size, char *wrapping_salt,
+			     char *decrypted_passphrase, unsigned int decrypted_passphrase_size);
 int ecryptfs_unwrap_passphrase(char *decrypted_passphrase, char *filename,
 			       char *wrapping_passphrase, char *wrapping_salt);
 int ecryptfs_unwrap_passphrase_bk(char *decrypted_passphrase,
-			       unsigned int *decrypted_passphrase_size, char *filename,
-			       char *wrapping_passphrase, char *wrapping_salt);
+			       unsigned int *p_decrypted_passphrase_size, char *filename,
+			       char *wrapping_passphrase, unsigned int wrapping_passphrase_size,
+			       char *wrapping_salt);
 int ecryptfs_insert_wrapped_passphrase_into_keyring(
 	char *auth_tok_sig, char *filename, char *wrapping_passphrase,
 	char *salt);
+int ecryptfs_insert_wrapped_passphrase_into_keyring_bk(
+	char *auth_tok_sig, char *filename, char *wrapping_passphrase,
+	unsigned int wrapping_passphrase_size, char *salt);
 char *ecryptfs_get_wrapped_passphrase_filename();
 struct ecryptfs_key_mod_ops *passphrase_get_key_mod_ops(void);
 int ecryptfs_validate_keyring(void);
@@ -597,6 +601,8 @@ int ecryptfs_add_blob_to_keyring(char *blob, char *sig);
 int ecryptfs_disable_echo(struct termios *saved_settings);
 int ecryptfs_enable_echo(struct termios *saved_settings);
 char *ecryptfs_get_passphrase(char *prompt);
+int ecryptfs_get_passphrase_from_file_bk(char *filename,
+			char *passphrase, unsigned int *p_passphrase_size);
 int ecryptfs_run_daemon(struct ecryptfs_messaging_ctx *mctx);
 
 #define ECRYPTFS_PRIVATE_DIR "Private"

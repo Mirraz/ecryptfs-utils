@@ -296,12 +296,13 @@ int ecryptfs_wrap_passphrase(char *filename, char *wrapping_passphrase,
 			     char *wrapping_salt, char *decrypted_passphrase)
 {
 	return ecryptfs_wrap_passphrase_bk(filename, wrapping_passphrase,
-			     wrapping_salt, decrypted_passphrase, strlen(decrypted_passphrase));
+			strlen(wrapping_passphrase), wrapping_salt,
+			decrypted_passphrase, strlen(decrypted_passphrase));
 }
 
 int ecryptfs_wrap_passphrase_bk(char *filename, char *wrapping_passphrase,
-			     char *wrapping_salt, char *decrypted_passphrase,
-			     unsigned int decrypted_passphrase_bytes)
+			     unsigned int wrapping_passphrase_size, char *wrapping_salt,
+			     char *decrypted_passphrase, unsigned int decrypted_passphrase_bytes)
 {
 	char wrapping_auth_tok_sig[ECRYPTFS_SIG_SIZE_HEX + 1];
 	char wrapping_key[ECRYPTFS_MAX_KEY_BYTES];
@@ -331,8 +332,15 @@ int ecryptfs_wrap_passphrase_bk(char *filename, char *wrapping_passphrase,
 		rc = -EIO;
 		goto out;
 	}
-	rc = generate_passphrase_sig(wrapping_auth_tok_sig, wrapping_key,
-				     wrapping_salt, wrapping_passphrase);
+	/* kind of dirty hack */
+	if (decrypted_passphrase[decrypted_passphrase_bytes-1] == 0) {
+		/* TODO syslog */
+		rc = -EIO;
+		goto out;
+	}
+
+	rc = generate_passphrase_sig_bk(wrapping_auth_tok_sig, wrapping_key,
+				     wrapping_salt, wrapping_passphrase, wrapping_passphrase_size);
 	if (rc) {
 		syslog(LOG_ERR, "Error generating passphrase signature; "
 		       "rc = [%d]\n", rc);
@@ -343,6 +351,7 @@ int ecryptfs_wrap_passphrase_bk(char *filename, char *wrapping_passphrase,
 	       (ECRYPTFS_MAX_PASSPHRASE_BYTES + 1));
 	memcpy(padded_decrypted_passphrase, decrypted_passphrase,
 	       decrypted_passphrase_bytes);
+	unsigned int decrypted_passphrase_size = decrypted_passphrase_bytes;
 	if ((decrypted_passphrase_bytes % ECRYPTFS_AES_BLOCK_SIZE) != 0)
 		decrypted_passphrase_bytes += (ECRYPTFS_AES_BLOCK_SIZE
 					       - (decrypted_passphrase_bytes
@@ -380,7 +389,7 @@ int ecryptfs_wrap_passphrase_bk(char *filename, char *wrapping_passphrase,
 		enc_ctx, 
 		(unsigned char *) encrypted_passphrase + tmp1_outlen,
 		(unsigned int *) &tmp2_outlen,
-		(ECRYPTFS_MAX_PASSPHRASE_BYTES + 
+		(ECRYPTFS_MAX_PASSPHRASE_BYTES +
 		  ECRYPTFS_AES_BLOCK_SIZE - tmp1_outlen));
 	if (err == SECFailure) {
 		syslog(LOG_ERR, "%s: PK11 error on digest final; "
@@ -408,13 +417,18 @@ nss_finish:
 		rc = - EIO;
 		goto out;
 	}
-	unlink(filename);
-	if ((fd = open(filename, (O_WRONLY | O_CREAT | O_EXCL),
-		       (S_IRUSR | S_IWUSR))) == -1) {
-		syslog(LOG_ERR, "Error attempting to open [%s] for writing\n",
-		       filename);
-		rc = -EIO;
-		goto out;
+	if (filename != NULL) {
+		unlink(filename);
+		if ((fd = open(filename, (O_WRONLY | O_CREAT | O_EXCL),
+				   (S_IRUSR | S_IWUSR))) == -1) {
+			syslog(LOG_ERR, "Error attempting to open [%s] for writing\n",
+				   filename);
+			rc = -EIO;
+			goto out;
+		}
+	} else {
+		fd = STDOUT_FILENO;
+		filename = "-";
 	}
 	if ((size = write(fd, wrapping_auth_tok_sig,
 			  ECRYPTFS_SIG_SIZE_HEX)) <= 0) {
@@ -449,12 +463,14 @@ int ecryptfs_unwrap_passphrase(char *decrypted_passphrase, char *filename,
 {
 	unsigned int decrypted_passphrase_size;
 	return ecryptfs_unwrap_passphrase_bk(decrypted_passphrase,
-			&decrypted_passphrase_size, filename, wrapping_passphrase, wrapping_salt);
+			&decrypted_passphrase_size, filename,
+			wrapping_passphrase, strlen(wrapping_passphrase), wrapping_salt);
 }
 
 int ecryptfs_unwrap_passphrase_bk(char *decrypted_passphrase,
-			       unsigned int *decrypted_passphrase_size, char *filename,
-			       char *wrapping_passphrase, char *wrapping_salt)
+			       unsigned int *p_decrypted_passphrase_size, char *filename,
+			       char *wrapping_passphrase, unsigned int wrapping_passphrase_size,
+			       char *wrapping_salt)
 {
 	char wrapping_auth_tok_sig[ECRYPTFS_SIG_SIZE_HEX + 1];
 	char wrapping_auth_tok_sig_from_file[ECRYPTFS_SIG_SIZE_HEX + 1];
@@ -478,8 +494,8 @@ int ecryptfs_unwrap_passphrase_bk(char *decrypted_passphrase,
 	memset(wrapping_auth_tok_sig_from_file, 0,
 	       sizeof(wrapping_auth_tok_sig_from_file));
 	memset(encrypted_passphrase, 0, sizeof(encrypted_passphrase));
-	rc = generate_passphrase_sig(wrapping_auth_tok_sig, wrapping_key,
-				     wrapping_salt, wrapping_passphrase);
+	rc = generate_passphrase_sig_bk(wrapping_auth_tok_sig, wrapping_key,
+				     wrapping_salt, wrapping_passphrase, wrapping_passphrase_size);
 	if (rc) {
 		syslog(LOG_ERR, "Error generating passphrase signature; "
 		       "rc = [%d]\n", rc);
@@ -570,15 +586,20 @@ nss_finish:
 		PK11_FreeSlot(slot);
 	if (rc)
 		goto out;
-	encrypted_passphrase_pos += tmp1_outlen + tmp2_outlen;
-	decrypted_passphrase_pos += tmp1_outlen + tmp2_outlen;
-	encrypted_passphrase_bytes -= tmp1_outlen + tmp2_outlen;
+	unsigned int decrypted_passphrase_size = tmp1_outlen + tmp2_outlen;
+	encrypted_passphrase_pos += decrypted_passphrase_size;
+	decrypted_passphrase_pos += decrypted_passphrase_size;
+	encrypted_passphrase_bytes -= decrypted_passphrase_size;
 	if (encrypted_passphrase_bytes != 0) {
 		syslog(LOG_ERR, "Wrong size of unwrapped passphrase\n");
 		rc = - EIO;
 		goto out;
 	}
-	*decrypted_passphrase_size = tmp1_outlen + tmp2_outlen;
+	/* kind of dirty hack */
+	int i;
+	for (i=decrypted_passphrase_size-1; i>=0 && decrypted_passphrase[i] == 0; --i);
+	if (i < 0) {rc = - EIO; goto out;}
+	*p_decrypted_passphrase_size = i+1;
 out:
 	return rc;
 }
@@ -596,25 +617,36 @@ int ecryptfs_insert_wrapped_passphrase_into_keyring(
 	char *auth_tok_sig, char *filename, char *wrapping_passphrase,
 	char *salt)
 {
-	char decrypted_passphrase[ECRYPTFS_MAX_PASSPHRASE_BYTES + 1] ;
+	return ecryptfs_insert_wrapped_passphrase_into_keyring_bk(auth_tok_sig,
+			filename, wrapping_passphrase, strlen(wrapping_passphrase), salt);
+}
+
+
+int ecryptfs_insert_wrapped_passphrase_into_keyring_bk(
+	char *auth_tok_sig, char *filename, char *wrapping_passphrase,
+	unsigned int wrapping_passphrase_size, char *salt)
+{
+	char decrypted_passphrase[ECRYPTFS_MAX_PASSPHRASE_BYTES + 1];
+	unsigned int decrypted_passphrase_size;
 	int rc = 0;
 
-	if ((rc = ecryptfs_unwrap_passphrase(decrypted_passphrase, filename,
-					     wrapping_passphrase, salt))) {
+	if ((rc = ecryptfs_unwrap_passphrase_bk(decrypted_passphrase,
+			&decrypted_passphrase_size, filename,
+			wrapping_passphrase, wrapping_passphrase_size, salt))) {
 		syslog(LOG_ERR, "Error attempting to unwrap passphrase from "
 		       "file [%s]; rc = [%d]\n", filename, rc);
 		rc = -EIO;
 		goto out;
 	}
-	if ((rc = ecryptfs_add_passphrase_key_to_keyring(auth_tok_sig,
-					decrypted_passphrase,
+	if ((rc = ecryptfs_add_passphrase_key_to_keyring_bk(auth_tok_sig,
+					decrypted_passphrase, decrypted_passphrase_size,
 					ECRYPTFS_DEFAULT_SALT_FNEK_HEX)) < 0) {
 		syslog(LOG_ERR, "Error attempting to add filename encryption "
 		       "key to user session keyring; rc = [%d]\n", rc);
 		goto out;
 	}
-	if ((rc = ecryptfs_add_passphrase_key_to_keyring(auth_tok_sig,
-							 decrypted_passphrase,
+	if ((rc = ecryptfs_add_passphrase_key_to_keyring_bk(auth_tok_sig,
+							 decrypted_passphrase, decrypted_passphrase_size,
 							 salt)) < 0) {
 		syslog(LOG_ERR, "Error attempting to add passphrase key to "
 		       "user session keyring; rc = [%d]\n", rc);
@@ -863,6 +895,47 @@ char *ecryptfs_get_passphrase(char *prompt) {
 		return NULL;
 	}
 	return passphrase;
+}
+
+/**
+ *
+ * @param filename
+ * @param passphrase must be able to hold ECRYPTFS_MAX_PASSPHRASE_BYTES bytes
+ * @param p_passphrase_size out ptr for got passphrase length
+ * @return error status
+ */
+
+int ecryptfs_get_passphrase_from_file_bk(char *filename,
+			char *passphrase, unsigned int *p_passphrase_size) {
+	int rc = 0;
+	int fd;
+	if (filename == NULL) {
+		fd = STDIN_FILENO;
+	} else {
+		fd = open(filename, O_RDONLY);
+		if (fd < 0) {perror("read"); rc = -EIO; goto out;}
+	}
+	ssize_t size = read(fd, passphrase, ECRYPTFS_MAX_PASSWORD_LENGTH);
+	if (size <= 0) {
+		if (size < 0) perror("read");
+		rc = -EIO; goto out2;
+	}
+	if (size > ECRYPTFS_MAX_PASSWORD_LENGTH) {
+		fprintf(stderr,"Passphrase is too long. Use at most %u "
+			       "characters long passphrase.\n",
+			ECRYPTFS_MAX_PASSWORD_LENGTH);
+		rc = -1; goto out2;
+	}
+	*p_passphrase_size = size;
+out2:
+	if (filename != NULL) {
+		if (close(fd)) {
+			perror("close");
+			if (!rc) rc = -EIO;
+		}
+	}
+out:
+	return rc;
 }
 
 char *ecryptfs_get_wrapped_passphrase_filename() {

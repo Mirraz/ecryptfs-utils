@@ -21,6 +21,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <getopt.h>
 #include <ecryptfs.h>
 #include "config.h"
 
@@ -36,7 +37,9 @@ void usage(void)
 
 int main(int argc, char *argv[])
 {
+	char *in_binpass_file = NULL;
 	char *passphrase;
+	unsigned int passphrase_size;
 	char auth_tok_sig_hex[ECRYPTFS_SIG_SIZE_HEX + 1];
 	char salt[ECRYPTFS_SALT_SIZE];
 	char salt_hex[ECRYPTFS_SALT_SIZE_HEX];
@@ -44,34 +47,74 @@ int main(int argc, char *argv[])
 	int fnek = 0;
 	uint32_t version;
 
-	if (argc == 1) {
-		/* interactive mode */
-		passphrase = ecryptfs_get_passphrase("Passphrase");
-	} else if (argc == 2 &&
-		   strlen(argv[1]) == 6 && strncmp(argv[1], "--fnek", 6) == 0) {
-		/* interactive mode, plus fnek */
-		passphrase = ecryptfs_get_passphrase("Passphrase");
-		fnek = 1;
-	} else if (argc == 2 &&
-		   strlen(argv[1]) == 1 && strncmp(argv[1], "-", 1) == 0) {
-		/* stdin mode */
-		passphrase = ecryptfs_get_passphrase(NULL);
-	} else if (argc == 3 &&
-		/* stdin mode, plus fnek */
-		   (strlen(argv[1])==6 && strncmp(argv[1], "--fnek", 6)==0) &&
-		   (strlen(argv[2])==1 && strncmp(argv[2], "-", 1)==0)) {
-		passphrase = ecryptfs_get_passphrase(NULL);
-		fnek = 1;
+	static const struct option long_options[] = {
+		{"help",       no_argument,       NULL, 'h'},
+		{"fnek",       no_argument,       NULL, 'n'},
+		{"in-binpass", required_argument, NULL, 'i'},
+		{0, 0, 0, 0}
+	};
+	static const char short_options[] = "hni:";
+
+	do {
+		int option_index = 0;
+		int c = getopt_long(argc, argv, short_options, long_options, &option_index);
+		if (c == -1) break;
+		switch (c) {
+		case 'n':
+			fnek = 1;
+			break;
+		case 'i':
+			in_binpass_file = optarg;
+			break;
+		case 'h':
+		case '?':
+		default:
+			usage(); goto out;
+		}
+	} while (1);
+
+	if (in_binpass_file != NULL) {
+		/* new behaviour */
+		if (optind < argc) {usage(); goto out;}
+		if (strncmp(in_binpass_file, "-", 2) == 0)
+			in_binpass_file = NULL;
+		passphrase = malloc(ECRYPTFS_MAX_PASSPHRASE_BYTES);
+		if (passphrase == NULL) {perror("malloc"); rc = 1; goto out;}
+		rc = ecryptfs_get_passphrase_from_file_bk(in_binpass_file,
+				passphrase, &passphrase_size);
+		if (rc) goto out;
 	} else {
-		usage();
-		goto out;
+		/* old behaviour */
+		fnek = 0;
+		if (argc == 1) {
+			/* interactive mode */
+			passphrase = ecryptfs_get_passphrase("Passphrase");
+		} else if (argc == 2 && strncmp(argv[1], "--fnek", 7) == 0) {
+			/* interactive mode, plus fnek */
+			passphrase = ecryptfs_get_passphrase("Passphrase");
+			fnek = 1;
+		} else if (argc == 2 && strncmp(argv[1], "-", 2) == 0) {
+			/* stdin mode */
+			passphrase = ecryptfs_get_passphrase(NULL);
+		} else if (argc == 3 &&
+			/* stdin mode, plus fnek */
+			   strncmp(argv[1], "--fnek", 7) == 0 &&
+			   strncmp(argv[2], "-", 2) == 0) {
+			passphrase = ecryptfs_get_passphrase(NULL);
+			fnek = 1;
+		} else {
+			usage();
+			goto out;
+		}
+		if (passphrase == NULL ||
+		    strlen(passphrase) > ECRYPTFS_MAX_PASSWORD_LENGTH) {
+			usage();
+			rc = 1;
+			goto out;
+		}
+		passphrase_size = strlen(passphrase);
 	}
-	if (passphrase == NULL ||
-	    strlen(passphrase) > ECRYPTFS_MAX_PASSWORD_LENGTH) {
-		usage();
-		rc = 1;
-		goto out;
-	}
+
 	if (fnek == 1) {
 		rc = ecryptfs_get_version(&version);
 		if (rc!=0 || !ecryptfs_supports_filename_encryption(version)) { 
@@ -86,8 +129,8 @@ int main(int argc, char *argv[])
 		from_hex(salt, ECRYPTFS_DEFAULT_SALT_HEX, ECRYPTFS_SALT_SIZE);
 	} else
 		from_hex(salt, salt_hex, ECRYPTFS_SALT_SIZE);
-	if ((rc = ecryptfs_add_passphrase_key_to_keyring(auth_tok_sig_hex,
-							 passphrase,
+	if ((rc = ecryptfs_add_passphrase_key_to_keyring_bk(auth_tok_sig_hex,
+							 passphrase, passphrase_size,
 							 salt)) < 0) {
 		fprintf(stderr, "%s [%d]\n", ECRYPTFS_ERROR_INSERT_KEY, rc);
 		fprintf(stderr, "%s\n", ECRYPTFS_INFO_CHECK_LOG);
@@ -106,8 +149,8 @@ int main(int argc, char *argv[])
 	/* If we make it here, filename encryption is enabled, and it has
 	 * been requested that we add the fnek to the keyring too
 	 */
-	if ((rc = ecryptfs_add_passphrase_key_to_keyring(auth_tok_sig_hex,
-				 passphrase,
+	if ((rc = ecryptfs_add_passphrase_key_to_keyring_bk(auth_tok_sig_hex,
+				 passphrase, passphrase_size,
 				 ECRYPTFS_DEFAULT_SALT_FNEK_HEX)) < 0) {
 		fprintf(stderr, "%s [%d]\n", ECRYPTFS_ERROR_INSERT_KEY, rc);
 		fprintf(stderr, "%s\n", ECRYPTFS_INFO_CHECK_LOG);

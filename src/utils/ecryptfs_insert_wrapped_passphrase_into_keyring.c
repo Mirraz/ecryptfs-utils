@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <ecryptfs.h>
 #include <string.h>
+#include <getopt.h>
 #include "config.h"
 
 void usage(void)
@@ -37,38 +38,65 @@ void usage(void)
 
 int main(int argc, char *argv[])
 {
-	char *file;
+	char *in_wrapped_file = NULL;
 	char *wrapping_passphrase;
 	char auth_tok_sig_hex[ECRYPTFS_SIG_SIZE_HEX + 1];
 	char salt[ECRYPTFS_SALT_SIZE];
 	char salt_hex[ECRYPTFS_SALT_SIZE_HEX];
 	int rc = 0;
 
-        if (argc == 1) {
-                /* interactive, and try default wrapped-passphrase file */
-		file = ecryptfs_get_wrapped_passphrase_filename();
-		if (file == NULL) {
+	static const struct option long_options[] = {
+		{"help",       no_argument,       NULL, 'h'},
+		{"in-wrapped", required_argument, NULL, 'i'},
+		{0, 0, 0, 0}
+	};
+	static const char short_options[] = "hi:";
+
+	do {
+		int option_index = 0;
+		int c = getopt_long(argc, argv, short_options, long_options, &option_index);
+		if (c == -1) break;
+		switch (c) {
+		case 'i':
+			in_wrapped_file = optarg;
+			break;
+		case 'h':
+		case '?':
+		default:
+			usage(); goto out;
+		}
+	} while (1);
+
+	if (in_wrapped_file != NULL) {
+		if (strncmp(in_wrapped_file, "-", 2) == 0)
+			{usage(); goto out;}
+		--optind;
+	}
+
+	--optind;
+    if (argc == 1+optind && in_wrapped_file == NULL) {
+        /* interactive, and try default wrapped-passphrase file */
+    	in_wrapped_file = ecryptfs_get_wrapped_passphrase_filename();
+		if (in_wrapped_file == NULL) {
 			usage();
 			goto out;
 		}
 		wrapping_passphrase = ecryptfs_get_passphrase("Passphrase");
-	} else if (argc == 2) {
-		/* interactive mode */
-		file = argv[1];
-		wrapping_passphrase = ecryptfs_get_passphrase("Passphrase");
-	} else if (argc == 3 &&
-		   strlen(argv[2]) == 1 && strncmp(argv[2], "-", 1) == 0) {
-		/* stdin mode */
-		file = argv[1];
-		wrapping_passphrase = ecryptfs_get_passphrase(NULL);
-	} else if (argc == 3 &&
-		   (strlen(argv[2]) != 1 || strncmp(argv[2], "-", 1) != 0)) {
-		/* argument mode */
-		file = argv[1];
-		wrapping_passphrase = argv[2];
 	} else {
-		usage();
-		goto out;
+		if (argc == 2+optind) {
+			/* interactive mode */
+			wrapping_passphrase = ecryptfs_get_passphrase("Passphrase");
+		} else if (argc == 3+optind && strncmp(argv[2+optind], "-", 2) == 0) {
+			/* stdin mode */
+			wrapping_passphrase = ecryptfs_get_passphrase(NULL);
+		} else if (argc == 3+optind && strncmp(argv[2+optind], "-", 2) != 0) {
+			/* argument mode */
+			wrapping_passphrase = argv[2+optind];
+		} else {
+			usage();
+			goto out;
+		}
+		if (in_wrapped_file == NULL) in_wrapped_file = argv[1+optind];
 	}
 	if (wrapping_passphrase == NULL ||
 	    strlen(wrapping_passphrase) > ECRYPTFS_MAX_PASSWORD_LENGTH) {
@@ -81,8 +109,9 @@ int main(int argc, char *argv[])
 		from_hex(salt, ECRYPTFS_DEFAULT_SALT_HEX, ECRYPTFS_SALT_SIZE);
 	} else
 		from_hex(salt, salt_hex, ECRYPTFS_SALT_SIZE);
-	if ((rc = ecryptfs_insert_wrapped_passphrase_into_keyring(
-		     auth_tok_sig_hex, file, wrapping_passphrase, salt)) < 0) {
+	if ((rc = ecryptfs_insert_wrapped_passphrase_into_keyring_bk(
+		     auth_tok_sig_hex, in_wrapped_file, wrapping_passphrase,
+		     strlen(wrapping_passphrase), salt)) < 0) {
 		fprintf(stderr, "%s [%d]\n",
 			ECRYPTFS_ERROR_UNWRAP_AND_INSERT, rc);
                 fprintf(stderr, "%s\n", ECRYPTFS_INFO_CHECK_LOG);
