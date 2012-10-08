@@ -33,6 +33,11 @@ void usage(void)
 	       "or\n"
 	       "printf \"%%s\" \"wrapping passphrase\" | "
 	       "ecryptfs-insert-wrapped-passphrase-into-keyring [file] -\n"
+	       "or\n"
+	       "printf \"%%s\" \"wrapping passphrase\" | "
+	       "ecryptfs-insert-wrapped-passphrase-into-keyring -i wrapped-fs-binpass-file\n"
+	       "    -i, --in-wrapped=file\n"
+	       "        input wrapped-fs-binpass from file\n"
 	       "\n");
 }
 

@@ -35,6 +35,13 @@ void usage(void)
 	       "printf \"%%s\\n%%s\" \"passphrase to wrap\" "
 	       "\"wrapping passphrase\" "
 	       "| ecryptfs-wrap-passphrase [file] -\n"
+	       "or\n"
+	       "printf \"%%s\" \"wrapping passphrase\" | "
+	       "ecryptfs-wrap-passphrase -i fs-binpass-file [-o wrapped-fs-binpass-file/-]\n"
+	       "    -i, --in-binpass=file\n"
+	       "        input fs-binpass from file\n"
+	       "    -o, --out-wrapped=file\n"
+	       "        output wrapped-fs-binpass to file (\"-\" or miss - output to STDOUT)\n"
 	       "\n"
 	       "note: passphrase can be at most %d bytes long\n",
 	       ECRYPTFS_MAX_PASSWORD_LENGTH);

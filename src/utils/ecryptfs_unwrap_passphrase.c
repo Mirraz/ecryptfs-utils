@@ -37,6 +37,13 @@ void usage(void)
 	       "or\n"
 	       "printf \"%%s\" \"wrapping passphrase\" | "
 	       "ecryptfs-unwrap-passphrase [file] -\n"
+	       "or\n"
+	       "printf \"%%s\" \"wrapping passphrase\" | "
+	       "ecryptfs-unwrap-passphrase -i wrapped-fs-binpass-file [-o fs-binpass-file/-]\n"
+	       "    -i, --in-wrapped=file\n"
+	       "        input wrapped-fs-binpass from file\n"
+	       "    -o, --out-binpass=file\n"
+	       "        output fs-binpass to file (\"-\" or miss - output to STDOUT)\n"
 	       "\n");
 }
 

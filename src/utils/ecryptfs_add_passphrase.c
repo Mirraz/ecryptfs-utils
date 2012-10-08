@@ -32,6 +32,10 @@ void usage(void)
 	       "or\n"
 	       "printf \"%%s\" \"passphrase\" | ecryptfs-add-passphrase"
 	       " [--fnek] -\n"
+	       "or\n"
+	       "ecryptfs-add-passphrase [--fnek] -i fs-binpass-file/-\n"
+	       "    -i, --in-binpass=file\n"
+	       "        input fs-binpass from file (\"-\" means STDIN)\n"
 	       "\n");
 }
 

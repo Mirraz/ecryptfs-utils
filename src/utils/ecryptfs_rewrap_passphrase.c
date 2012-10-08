@@ -34,6 +34,11 @@ void usage(void)
 	       "printf \"%%s\\n%%s\" \"old wrapping passphrase\" "
 	       "\"new wrapping passphrase\" "
 	       "| ecryptfs-rewrap-passphrase [file] -\n"
+	       "or\n"
+	       "printf \"%%s\\n%%s\" \"old wrapping passphrase\" \"new wrapping passphrase\" | "
+	       "ecryptfs-rewrap-passphrase -f wrapped-fs-binpass-file\n"
+	       "    -f, --file-wrapped=file\n"
+	       "        rewrap wrapped-fs-binpass in file\n"
 	       "\n");
 }
 
